@@ -139,37 +139,37 @@ app.post("/evaluate", upload.array("resumes", 20), async (req, res) => {
       return res.status(400).json({ error: "Maximum 20 resumes can be evaluated at once" });
     }
 
-    const evaluations = [];
-
-    // Process each resume file
-    for (const file of req.files) {
+    // Process all resume files in parallel for faster evaluation
+    const evaluationPromises = req.files.map(async (file) => {
       try {
         const resumeText = await extractTextAsync(file.originalname, file.buffer);
 
         if (!resumeText.trim()) {
-          evaluations.push({
+          return {
             candidate_name: file.originalname || "Unknown",
             overall_score: 0,
             overall_assessment: "Resume file was empty or could not be read.",
             recommendation: "NO_MATCH",
             error: "Empty resume",
-          });
-          continue;
+          };
         }
 
         const candidateName = file.originalname.split(".").slice(0, -1).join(".") || "Unknown";
         const evaluation = await evaluateResumeWithAI(resumeText, job_description, candidateName);
-        evaluations.push(evaluation);
+        return evaluation;
       } catch (error) {
-        evaluations.push({
+        return {
           candidate_name: file.originalname || "Unknown",
           overall_score: 0,
           overall_assessment: error.message,
           recommendation: "NO_MATCH",
           error: error.message,
-        });
+        };
       }
-    }
+    });
+
+    // Wait for all evaluations to complete in parallel
+    const evaluations = await Promise.all(evaluationPromises);
 
     // Sort by overall_score descending
     evaluations.sort((a, b) => (b.overall_score || 0) - (a.overall_score || 0));
